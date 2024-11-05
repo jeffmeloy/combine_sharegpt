@@ -1,0 +1,157 @@
+@startuml
+skinparam ActivityShape roundBox
+skinparam ActivityBorderThickness 1
+skinparam ArrowThickness 1
+skinparam ActivityDiamondBorderThickness 1
+skinparam ActivityDiamondBackgroundColor white
+skinparam NoteBorderThickness 1
+
+|Configuration|
+start
+:Load Configuration File;
+if (Config Valid?) then (yes)
+else (no)
+  stop
+endif
+
+|Data Loading|
+:Load and Combine JSON/JSONL Files;
+:Count Total Input Records;
+
+|Preprocessing|
+:Validate Conversations;
+note right
+  1. Convert user/assistant to human/gpt
+  2. Check system prompts
+  3. Ensure valid conversation order
+endnote
+
+if (Strip GPT-isms?) then (yes)
+  :Remove GPT-isms;
+endif
+
+if (Strip Non-ASCII?) then (yes)
+  :Remove Non-ASCII Content;
+endif
+
+:Clean Wikipedia References;
+
+:Calculate nbytes;
+:Sort and Truncate by Size;
+
+if (Strip Rejection Phrases?) then (yes)
+  :Remove Rejection Phrases;
+endif
+
+if (Remove Exact Duplicates?) then (yes)
+  :Remove Identical Conversations;
+endif
+
+:Filter Invalid Conversations;
+note right: Must have both human and gpt messages
+
+|Embedding|
+if (Need Embeddings for Dedup/Filter?) then (yes)
+  :Compute QA Pair Embeddings;
+  note right
+  1. Initialize Device (GPU/CPU)
+  2. Load Embedding Model
+  3. Perform Batch Processing
+     - Extract QA Pairs
+     - Tokenize QA Pairs
+     - Compute Embeddings
+  end note
+  
+  if (Use ChromaDB?) then (yes)
+    :Save to ChromaDB;
+    note right
+      1. Save the dataset embeddings 
+      2. Save term frequencies for BM25
+    end note
+  endif
+  
+  :Calculate Optimal Bins;
+  note right
+    1. Iterate through possible bin counts
+    2. Calculate coefficient of variation (CV)
+    3. Select bin count with lowest CV
+    4. Ensures most even distribution
+  end note
+  
+  if (Apply Deduplication?) then (yes)
+    :Remove Similar Conversations;
+    note right: Using cosine similarity
+  endif
+  
+  if (Apply Filtering?) then (yes)
+    :Apply Histogram-based Filtering;
+    note right
+      Perform 2-stage filtering (F1 and F2):
+      1. Cosine Similarity (cs)
+         - Keep lowest similarity scores
+         - Increases dataset diversity
+      2. KL Divergence (kl)
+         - Keep highest divergence
+         - Maintains informative pairs
+      3. Normalized Effective Rank (ner)
+         - Keep highest rank scores
+         - Preserves complexity
+      4. Entropy
+         - Keep highest entropy scores
+         - Maintains information richness
+      5. Variance Increase
+         - Keep highest variance
+         - Preserves diverse samples
+      6. Random Selection
+         - Random filtering baseline
+    end note
+  endif
+  
+  :Delete Embedding Data;
+endif
+
+|System Prompts|
+if (Improve System Prompts?) then (yes)
+  :Improve System Prompts using llama.cpp model;
+endif
+
+|Additional Processing|
+:Swap Slop Phrases with Alternatives;
+:Add Unmodified Files;
+:Sort and Truncate Again;
+:Plot Size Distribution;
+
+|Normalization|
+if (Normalize Data?) then (yes)
+  :Normalize Bin Distributions;
+  note right
+    1. Set target bin size (len(data) / nbins)
+    2. Process bins from smallest to largest:
+       a. If bin count > target_size:
+          - Randomly select target_size items
+          - Move excess to excess_data pool
+       b. If bin count < target_size:
+          - Keep all current bin items
+          - Fill remaining space from excess_data
+    3. Post-processing:
+       - Shuffle data within each bin
+       - Maintains size progression
+       - Ensures curriculum-like ordering
+       - Each bin has ~equal number of items
+    4. Statistics tracking:
+       - Record items per bin
+       - Track min/max nbytes per bin
+       - Monitor bin population balance
+  end note
+endif
+
+|Data Saving|
+:Split into Train/Test Sets;
+fork
+  :Save JSON Files;
+fork again
+  :Save JSONL Files;
+end fork
+
+stop
+@enduml

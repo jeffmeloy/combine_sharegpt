@@ -1,40 +1,85 @@
+control:
+  debug: true  # Enable or disable debug mode
+  dedup: false # Deduplicate the input data using embeddings before processing
+  filter: false # filter to control the distribution of the combined data set length
+  normalize: false  # Normalize the distribution of the combined data set length
+  use_chromadb: false # Flag to enable/disable ChromaDB usage
+
 embedding:
   tokenizer_name: "bert-base-uncased"  # Tokenizer to use for text processing
-  max_length: 8192  # Maximum number of tokens to process in a single pass
+  max_length: 8192  # Maximum number of tokens to process for embeddings, truncate if longer
   embedding_model_path: ".//model//"  # Local or HuggingFace path to the embedding model directory
   embedding_model_name: "nomic-embed-text-v1.5"  # Name of the embedding model to use
-  trust_remote_code: true  # Whether to trust remote code when loading the model
+  trust_remote_code: true  # if trust remote code when loading the model
   safe_serialization: true  # Use safe serialization when loading the model
   rotary_scaling_factor: 2  # Scaling factor for rotary embeddings
   local_files_only: true  # Load model files from the local file system only
-  initial_batch_size: 2000  # Initial batch size for embedding computation
+  initial_batch_size: 10  # Initial batch size for embedding computation
   memory_fraction: 0.7  # Fraction of device memory to use for batching
 
 filtering:
-  max_output_size: 64000  # Maximum number of output records after filtering and preprocessing
-  dedup: true  # Deduplicate the input data using embeddings before processing
-  norm: true  # Normalize the distribution of the combined data set length
-  similarity_threshold: 0.95  # Threshold for similarity to consider pairs as duplicates (0-1)
-  F1: "cosine"  # First filtering method
-  F2: "kl"  # Second filtering method
-  filter_batch_size: 1000 # pytorch cosine similiarity batch size 
+  max_output_size: 64000  # Maximum conversation nbytes size to process and include in the output
+  boost: 1.0            # Additional filter boost (0-1), default=1.0
+  similarity_threshold: 0.80  # Threshold for similarity to consider pairs as duplicates (0-1)
+  F1: "kl"  # First filtering method
+  F2: "ner"  # Second filtering method
+  filter_batch_size: 500 # pytorch cosine similiarity batch size 
   force_num_bins: null  # Set to an integer to override automatic bin selection
 
 input:
-  directory: "./"  # Directory containing input sharegpt.json files
+  directory: "./filtered/"  # Directory containing input sharegpt.json files
+  unmodified_files:  # List of input files to include without deduplication or filtering
+    - "sharegpt.json"
+    - "sonnet3.5_science_conversations_sharegpt.json"
 
 output:
+  test_ratio: 0.1  # Ratio of test data to total data
   directory: "./"  # Directory to save output files
   train_output_file: "train_sharegpt"  # Base name for train output files
   test_output_file: "test_sharegpt"  # Base name for test output files
+  total_output_file: "total_sharegpt"  # Base name for total output files
   save_json: true  # Save output in JSON format
   save_jsonl: true  # Save output in JSONL format
+
+chromadb:
+  path: "./chromadb" # where to store
+  collection_name: "sharegpt_embeddings" #what to name
+
+system_prompt:
+  improve: true # Enable or disable system prompt improvement
+  dotwice: false # Enable or disable dotwice
+  llmlib: "llamacpp"
+  llama_cpp_binary: "./llamacpp/llama-cli.exe"  # Path to the llama.cpp binary
+  model_path: "./model/WestLake-7B-v2.Q8_0.gguf"  # Path to the LLaMA model
+  temp_file: "./temp_sharegpt_data.json" # Path to the temporary file for system prompt improvement
+  threads: 16  # Number of CPU threads to use for system prompt improvement, set = to 1/2 number of cores
+  ctx_size: 16384  # Context size for system prompt improvement
+  batch_size: 256
+  gpu_layers: 32
+  use_mlock: true
+  use_mmap: false
+  max_tokens: 8192
+  temperature: 0.7
+  top_k: 40
+  top_p: 0.95
+  repeat_penalty: 1.1
+  typical_p: 0.9
+  mirostat: 2
+  mirostat_lr: 0.05
+  mirostat_ent: 3.0
 
 logging:
   level: "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Log message format 
 
 preprocessing:
+  validate_conversations: true  # Validate conversations
+  strip_gptisms: true  # Strip out GPT-isms from the conversation
+  strip_non_ascii: true # Strip out non-ascii and non-code characters
+  sort_and_truncate: true  # Sort and truncate the input data
+  strip_out_rejection_phrases: true  # Remove conversations with rejection phrases
+  remove_duplicates: true  # Remove exact duplicate conversations
+  ascii_code_threshold: 0.95 # Threshold for the ratio of ASCII and coding characters in a string
   system_prompt: "Master input meaning and intent to synthesize clear, coherent, and relevant responses."
   gpt_strip_out:  # List of phrases to strip out from GPT responses
     - "Ah, "
@@ -42,11 +87,16 @@ preprocessing:
     - "Sure!"
     - "Great!"
     - "Hello!"
+    - "Exactly!" 
     - "Of course!"
+    - "Certainly."
     - "Certainly!"
+    - "I hear you."
     - "Absolutely!"
+    - "Definitely!"
     - "Happy coding!"
     - "The answer is "
+    - "You're welcome!"
     - "The answer is: "
     - "You’re welcome!"
     - "Great question!"
@@ -55,8 +105,12 @@ preprocessing:
     - "I hope that helps"
     - "I'm happy to help!"
     - "I hope this helps!"
+    - "You're very welcome!"
+    - "You're very welcome."
     - "Sure, I can do that."
     - "Interesting question!"
+    - "The age-old question!" 
+    - "That's great to hear!" 
     - "Interesting questions!"
     - "What a great question!"
     - "I'm glad to hear that!"
@@ -64,6 +118,7 @@ preprocessing:
     - "Great, I'm happy to help!"
     - "Sure, I'd be happy to help!"
     - "I hope these examples help!"
+    - "As an unbiased AI assistant,"
     - "Here's a descriptive answer:"
     - "Good luck, and happy coding!"
     - "Let me know if you need that."
@@ -94,6 +149,7 @@ preprocessing:
     - "Please let me know if you have any questions."
     - "Let me know if you have any further questions."
     - "I apologize if my previous response was unclear"
+    - "Absolutely, I'd be happy to help you with that."
     - "Let me know if you need help with anything else!"
     - "Please let me know if you have any other queries."
     - "Please let me know if you have any other concerns."
@@ -111,6 +167,7 @@ preprocessing:
     - "Let me know if you have any questions or need further clarification."
     - "Let me know if you have any questions, or if you need additional help."
     - "Please let me know if there's any part of it you want me to expand on."
+    - "If you have any more questions, or need further assistance, don't hesitate to ask."
     - "Let me know if you have any questions or if you'd like to start working on this project."
     - "Let me know if you have any more questions or if you'd like to practice with more examples."
     - "Let me know if you have any other questions or if there's anything else I can assist you with."
@@ -128,3 +185,402 @@ preprocessing:
     - "I cannot"
     - "I can't"
     - "I will not"
+    - "chinese"
+
+  code_chars: # List of code symbols consider for valid conversation
+    - 0x2190  # Leftwards arrow
+    - 0x2191  # Upwards arrow
+    - 0x2192  # Rightwards arrow
+    - 0x2193  # Downwards arrow
+    - 0x2194  # Left right arrow
+    - 0x2195  # Up down arrow
+    - 0x21D2  # Rightwards double arrow
+    - 0x21D4  # Left right double arrow
+    - 0x2200  # For all
+    - 0x2203  # There exists
+    - 0x2205  # Empty set
+    - 0x2208  # Element of
+    - 0x2209  # Not an element of
+    - 0x220B  # Contains as member
+    - 0x220C  # Does not contain as member
+    - 0x220F  # N-ary product
+    - 0x2211  # N-ary summation
+    - 0x2213  # Minus-or-plus sign
+    - 0x2215  # Division slash
+    - 0x221A  # Square root
+    - 0x221D  # Proportional to
+    - 0x221E  # Infinity
+    - 0x2220  # Angle
+    - 0x2227  # Logical and
+    - 0x2228  # Logical or
+    - 0x2229  # Intersection
+    - 0x222A  # Union
+    - 0x2234  # Therefore
+    - 0x2235  # Because
+    - 0x2237  # Proportion
+    - 0x223C  # Tilde operator
+    - 0x2248  # Almost equal to
+    - 0x2260  # Not equal to
+    - 0x2261  # Identical to
+    - 0x2264  # Less-than or equal to
+    - 0x2265  # Greater-than or equal to
+    - 0x226A  # Much less-than
+    - 0x226B  # Much greater-than
+    - 0x2282  # Subset of
+    - 0x2283  # Superset of
+    - 0x2284  # Not a subset of
+    - 0x2285  # Not a superset of
+    - 0x2286  # Subset of or equal to
+    - 0x2287  # Superset of or equal to
+    - 0x2295  # Circled plus
+    - 0x2296  # Circled minus
+    - 0x2297  # Circled times
+    - 0x2298  # Circled division slash
+    - 0x22A5  # Up tack
+    - 0x22C5  # Dot operator
+    - 0x2308  # Left ceiling
+    - 0x2309  # Right ceiling
+    - 0x230A  # Left floor
+    - 0x230B  # Right floor
+    - 0x2329  # Left-pointing angle bracket
+    - 0x232A  # Right-pointing angle bracket
+    - 0x25A0  # Black square
+    - 0x25A1  # White square
+    - 0x25AA  # Black small square
+    - 0x25AB  # White small square
+    - 0x25B2  # Black up-pointing triangle
+    - 0x25B3  # White up-pointing triangle
+    - 0x25BC  # Black down-pointing triangle
+    - 0x25BD  # White down-pointing triangle
+    - 0x25C6  # Black diamond
+    - 0x25C7  # White diamond
+    - 0x25CF  # Black circle
+    - 0x25EF  # Large circle
+    - 0x2605  # Black star
+    - 0x2606  # White star
+    - 0x03B1  # Greek small letter alpha
+    - 0x03B2  # Greek small letter beta
+    - 0x03B3  # Greek small letter gamma
+    - 0x03B4  # Greek small letter delta
+    - 0x03B5  # Greek small letter epsilon
+    - 0x03BB  # Greek small letter lambda
+    - 0x03C0  # Greek small letter pi
+    - 0x03C3  # Greek small letter sigma
+    - 0x03C9  # Greek small letter omega
+    - 0x2070  # Superscript zero
+    - 0x00B9  # Superscript one
+    - 0x00B2  # Superscript two
+    - 0x00B3  # Superscript three
+    - 0x2074  # Superscript four
+    - 0x2075  # Superscript five
+    - 0x2076  # Superscript six
+    - 0x2077  # Superscript seven
+    - 0x2078  # Superscript eight
+    - 0x2079  # Superscript nine
+    - 0x2080  # Subscript zero
+    - 0x2081  # Subscript one
+    - 0x2082  # Subscript two
+    - 0x2083  # Subscript three
+    - 0x2084  # Subscript four
+    - 0x2085  # Subscript five
+    - 0x2086  # Subscript six
+    - 0x2087  # Subscript seven
+    - 0x2088  # Subscript eight
+    - 0x2089  # Subscript nine
+    - 0x2026  # Horizontal ellipsis
+    - 0x00A9  # Copyright sign
+    - 0x00AE  # Registered sign
+    - 0x2122  # Trade mark sign
+    - 0x20AC  # Euro sign
+    - 0x00A3  # Pound sign
+    - 0x00A5  # Yen sign
+    - 0x2713  # Check mark
+    - 0x2717  # Ballot X
+    - 0x21B5  # Downwards arrow with corner leftwards
+    - 0x2261  # Identical to
+    - 0x2262  # Not identical to
+    - 0x2102  # Double-struck C
+    - 0x210D  # Double-struck H
+    - 0x2115  # Double-struck N
+    - 0x2119  # Double-struck P
+    - 0x211A  # Double-struck Q
+    - 0x211D  # Double-struck R
+    - 0x2124  # Double-struck Z
+    - 0x2128  # Black-letter Z
+    - 0x2132  # Turned capital F
+    - 0x213A  # Rotated capital Q
+    - 0x2135  # Alef symbol
+    - 0x2136  # Bet symbol
+    - 0x2137  # Gimel symbol
+    - 0x2138  # Dalet symbol
+    - 0x2190  # Leftwards arrow
+    - 0x2191  # Upwards arrow
+    - 0x2192  # Rightwards arrow
+    - 0x2193  # Downwards arrow
+    - 0x2194  # Left right arrow
+    - 0x2195  # Up down arrow
+    - 0x21D0  # Leftwards double arrow
+    - 0x21D1  # Upwards double arrow
+    - 0x21D2  # Rightwards double arrow
+    - 0x21D3  # Downwards double arrow
+    - 0x21D4  # Left right double arrow
+
+slop_swap:
+  "Eyes sparkling with mischief":
+    - "A mischievous glance"
+    - "A playful gleam in their eyes"
+    - "Eyes full of mischief"
+    - "A teasing gaze"
+    - "Eyes glinting with amusement"
+  "Eyes twinkling with mischief":
+    - "Eyes full of playful intent"
+    - "A gleam of mischief in their eyes"
+    - "A knowing glance"
+    - "A playful twinkle"
+    - "Eyes glinting mischievously"
+  "Maybe, just maybe":
+    - "Perhaps"
+    - "It's possible"
+    - "Maybe"
+    - "Possibly"
+    - "There’s a chance"
+  "Ministrations":
+    - "Attentions"
+    - "Care"
+    - "Efforts"
+    - "Help"
+    - "Assistance"
+  "Couldn’t help but":
+    - "Had to"
+    - "Couldn't resist"
+    - "Found themselves"
+    - "Couldn't avoid"
+    - "Ended up"
+  "Racing with anticipation":
+    - "Filled with eagerness"
+    - "Waiting excitedly"
+    - "Bursting with anticipation"
+    - "Eagerly awaiting"
+    - "Feeling a rush of excitement"
+  "Leaves little to the imagination":
+    - "Highly suggestive"
+    - "Very revealing"
+    - "Almost explicit"
+    - "Obvious"
+    - "Clear in its intent"
+  "Shivers down":
+    - "A chill ran down"
+    - "A shiver crept down"
+    - "A tremor ran through"
+    - "A sensation crawled down"
+    - "A tingle traveled down"
+  "Shivers up":
+    - "A tremor went up"
+    - "A shiver crawled up"
+    - "A chill moved upward"
+    - "A tingle rose"
+    - "A sensation climbed up"
+  "Waggles her eyebrows":
+    - "Raises an eyebrow playfully"
+    - "Gives a cheeky look"
+    - "Arches her eyebrow"
+    - "Gives a mischievous glance"
+    - "Smirks with a raised eyebrow"
+  "A testament to":
+    - "Proof of"
+    - "A sign of"
+    - "An indication of"
+    - "A reflection of"
+    - "Demonstrating"
+  "A moth to a flame":
+    - "Drawn irresistibly"
+    - "Like metal to a magnet"
+    - "Pulled in"
+    - "Inescapably attracted"
+    - "Caught in a pull"
+  "Canvas":
+    - "Backdrop"
+    - "Setting"
+    - "Frame"
+    - "Scene"
+    - "Scape"
+  "Eyes glinted":
+    - "Eyes shone"
+    - "Eyes flashed"
+    - "A gleam appeared in their eyes"
+    - "Their eyes flickered"
+    - "Their gaze sparkled"
+  "Camaraderie":
+    - "Brotherhood"
+    - "Companionship"
+    - "Fellowship"
+    - "Team spirit"
+    - "Friendship"
+  "Humble abode":
+    - "Simple home"
+    - "Modest house"
+    - "Cozy dwelling"
+    - "Small home"
+    - "Unassuming place"
+  "Cold and calculating":
+    - "Ruthless"
+    - "Emotionless and strategic"
+    - "Calculating and detached"
+    - "Indifferent and analytical"
+    - "Shrewd and unemotional"
+  "Unbeknownst to them":
+    - "Without their knowledge"
+    - "Unknown to them"
+    - "Unaware"
+    - "They didn’t realize"
+    - "Without their awareness"
+  "Iridescent":
+    - "Shimmering"
+    - "Glossy"
+    - "Lustrous"
+    - "Gleaming"
+    - "Radiant"
+  "A dance as old as time":
+    - "A timeless ritual"
+    - "An ancient rhythm"
+    - "An ageless tradition"
+    - "A time-honored custom"
+    - "A pattern as old as history"
+  "Husky whispers":
+    - "Low whispers"
+    - "Breathy murmurs"
+    - "Soft-spoken words"
+    - "Quiet murmurs"
+    - "Muted whispers"
+  "Half-lidded eyes":
+    - "Drooping eyes"
+    - "Partially closed eyes"
+    - "Heavy-lidded eyes"
+    - "Drowsy gaze"
+    - "Sleepy eyes"
+  "Seductive purrs":
+    - "Soft murmurs"
+    - "Sultry whispers"
+    - "Tempting tones"
+    - "Alluring voice"
+    - "Sensual words"
+  "Little did they know":
+    - "Unaware of what was to come"
+    - "They had no idea"
+    - "Unbeknownst to them"
+    - "Without realizing it"
+    - "They didn’t suspect"
+  "Towers over":
+    - "Looms over"
+    - "Stands above"
+    - "Overlooks"
+    - "Overshadows"
+    - "Rises above"
+  "Rich tapestry":
+    - "Complex picture"
+    - "Intricate design"
+    - "Detailed mosaic"
+    - "Vivid portrayal"
+    - "Layered narrative"
+  "Delve into":
+    - "Explore"
+    - "Investigate"
+    - "Discuss"
+    - "Examine"
+    - "Review"
+  "Dive into":
+    - "Explore"
+    - "Investigate"
+    - "Discuss"
+    - "Examine"
+    - "Review"
+  "Lean in":
+    - "Approach"
+    - "Move closer"
+    - "Step in"
+    - "Shift forward"
+    - "Get closer"
+  "Leans in":
+    - "Moves closer"
+    - "Steps closer"
+    - "Shifts forward"
+    - "Approaches"
+    - "Gets nearer"
+  "Leans in close":
+    - "Approaches closely"
+    - "Moves very close"
+    - "Steps in nearer"
+    - "Gets close"
+    - "Edges forward"
+  "Pleasure and pain":
+    - "Delight and discomfort"
+    - "Joy and agony"
+    - "Bliss and hurt"
+    - "Satisfaction and suffering"
+    - "Ecstasy and distress"
+  "Dance":
+    - "Movement"
+    - "Flow"
+    - "Sway"
+    - "Rhythm"
+    - "Steps"
+  "Chuckles darkly":
+    - "Laughs softly"
+    - "Gives a low laugh"
+    - "Smiles with a hint of menace"
+    - "Lets out a low chuckle"
+    - "Smirks ominously"
+  "Delving into":
+    - "Exploring"
+    - "Investigating"
+    - "Discussing"
+    - "Examining"
+    - "Reviewing"
+  "Don't stop, don't ever stop":
+    - "Keep going"
+    - "Don’t stop"
+    - "Continue"
+    - "Keep doing that"
+    - "Don’t quit"
+  "Make me yours, claim me":
+    - "Take me"
+    - "I’m yours"
+    - "Make me yours"
+    - "Claim me now"
+    - "I’m all yours"
+  "Mind, body, and soul":
+    - "All of me"
+    - "Every part of me"
+    - "My whole being"
+    - "Completely"
+    - "Entirely "
+  "Another day in your life":
+    - "Just another day"
+    - "A day like any other"
+    - "One more day"
+    - "Another ordinary day"
+    - "A typical day"
+  "a Symphony of":
+    - "A blend of"
+    - "A mixture of"
+    - "A combination of"
+    - "A harmony of"
+    - "A chorus of"
+  "Audible pop":
+    - "A sharp sound"
+    - "A clear pop"
+    - "A distinct noise"
+    - "A sudden pop"
+    - "A noticeable sound"
+  "The world narrows":
+    - "Everything else fades"
+    - "Focus sharpens"
+    - "The surroundings blur"
+    - "Attention focuses"
+    - "The rest of the world disappears"
+  "Body and soul":
+    - "Physically and mentally"
+    - "Completely"
+    - "Totally"
+    - "In every way"
+    - "Fully"
